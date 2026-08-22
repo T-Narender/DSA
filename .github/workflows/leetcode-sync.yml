@@ -10,8 +10,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate LeetCode session
+        id: auth-check
+        env:
+          LEETCODE_CSRF_TOKEN: ${{ secrets.LEETCODE_CSRF_TOKEN }}
+          LEETCODE_SESSION: ${{ secrets.LEETCODE_SESSION }}
+        run: |
+          response=$(curl -s 'https://leetcode.com/graphql/' \
+            -H 'content-type: application/json' \
+            -H "x-csrftoken: $LEETCODE_CSRF_TOKEN" \
+            -H "cookie: csrftoken=$LEETCODE_CSRF_TOKEN; LEETCODE_SESSION=$LEETCODE_SESSION" \
+            --data-raw '{"query":"query recentSubmissionList($offset: Int!, $limit: Int!) { submissionList(offset: $offset, limit: $limit) { submissions { id } } }","variables":{"offset":0,"limit":1}}')
+
+          if echo "$response" | jq -e '.data.submissionList.submissions | type == "array"' >/dev/null; then
+            echo "auth_valid=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Skipping sync because LEETCODE_SESSION/LEETCODE_CSRF_TOKEN appear invalid or expired."
+            echo "auth_valid=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Sync
-        uses: Prem-080/leetcode-sync@master
+        if: steps.auth-check.outputs.auth_valid == 'true'
+        uses: joshcai/leetcode-sync@v1.7
         with:
           github-token: ${{ github.token }}
           leetcode-csrf-token: ${{ secrets.LEETCODE_CSRF_TOKEN }}
